@@ -25,7 +25,6 @@ typedef struct {
    uint8_t damage_die;
 } Weapon;
 
-
 typedef struct {
     char model_name[NAME_LENGTH];
     uint8_t movement;
@@ -51,6 +50,10 @@ typedef struct {
     int8_t unit_count;
 } Army;
 
+typedef struct{
+    uint8_t damage[30];
+    uint8_t wounds_count;
+} Combat_Damage;
 
 uint8_t roll_d6(){
     return 1 +rand() % 6;
@@ -92,6 +95,7 @@ uint8_t get_wounding_threshold(uint8_t strenght, uint8_t tougness){
 }
 
 
+Combat_Damage combat_damage;
 /*
     ------------ Combat ------------ 
     1- Attemt to Hit
@@ -121,6 +125,22 @@ uint8_t get_wounding_threshold(uint8_t strenght, uint8_t tougness){
         can be dice rolls d3,d6
         can be both d3 + 3,...
 */
+void apply_damage(Unit *unit,Combat_Damage *combat_damage){
+    if(unit->model_count <= 0){
+        printf("Unit %s is already dead \n",unit->unit_name);
+        return;
+    }
+
+    for(uint8_t i = 0; i < combat_damage->wounds_count; i++){
+        //todo implement damage to models
+    }
+
+}
+
+void add_combat_damage(Combat_Damage *combat_damage,uint8_t damage_value){
+    combat_damage->damage[combat_damage->wounds_count] =damage_value;
+    combat_damage->wounds_count++;
+}
 
 uint8_t get_damage_die(uint8_t damage_die){
     if(damage_die == D3){
@@ -142,12 +162,9 @@ void handle_damage(Model *attacker,Model *defender){
     uint8_t damage_die_value = 0;
     handle_damage_die(attacker,&damage_die_value);
     uint8_t damage_value = attacker->weapon.damage + damage_die_value;
-    defender->wound -= damage_value;
     char *defender_name = defender->model_name;
+    add_combat_damage(&combat_damage,damage_value);
     (void)printf(ANSI_COLOR_BLUE "%s takes %d wound \n" ANSI_COLOR_RESET,defender_name,damage_value);
-    if( defender->wound <= 0){
-        (void)printf(ANSI_COLOR_BLUE "%s dies \n" ANSI_COLOR_RESET,defender_name);
-    }
 }
 
 void handle_invulnerable_save(Model *defender, uint8_t *armor_save_value){
@@ -211,6 +228,18 @@ void model_combat(Model *attacker,Model * defender,enum Turn current_turn){
          handle_attack(defender,attacker);
     }
     (void)printf("------- Attack Sequence Ends -------- \n \n");
+}
+
+void unit_combat(Unit *attacker,Unit *defender,enum Turn current_turn){
+    if(current_turn == RED){
+        for(uint8_t i = 0; i < attacker->model_count; i++){
+            model_combat(&attacker->models[i],&defender->models[0],current_turn);
+        }
+    } else {
+        for(uint8_t i = 0; i < attacker->model_count; i++){
+            model_combat(&defender->models[0],&attacker->models[i],current_turn);
+        }
+    }
 }
 
 // void start_combat(Army *army1, Army *army2,enum Turn current_turn){
