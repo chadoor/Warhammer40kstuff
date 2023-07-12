@@ -31,6 +31,7 @@ typedef struct {
     uint8_t tougness;
     uint8_t armor_save;
     int8_t wound;
+    int8_t max_wound;
     int8_t leadership;
     uint8_t invulnerable_save;
     Weapon weapon;
@@ -50,11 +51,6 @@ typedef struct {
     int8_t unit_count;
 } Army;
 
-typedef struct{
-    uint8_t damage[30];
-    uint8_t wounds_count;
-} Combat_Damage;
-
 uint8_t roll_d6(){
     return 1 +rand() % 6;
 }
@@ -62,6 +58,56 @@ uint8_t roll_d6(){
 uint8_t roll_d3(){
     return 1 +rand() % 3;
 }
+
+
+//   Utilities 
+// ------------------------
+
+void print_unit(Unit *unit){
+    printf("Unit Name: %s \n", unit->unit_name);
+    printf("Models in this unit:\n");
+    for(uint8_t i = 0; i < unit->model_count; i++){
+        printf("  Model %d:\n", i+1);
+        printf("    Name: %s \n", unit->models[i].model_name);
+        printf("    Health: %d \n", unit->models[i].wound);
+        printf("    Weapon: %s \n", unit->models[i].weapon.weapon_name);
+    }
+    printf("\n");
+}
+
+void print_army(Army *army){
+    printf("Army Name: %s \n", army->army_name);
+    printf("Units in this army:\n");
+    for(uint8_t i = 0; i < army->unit_count; i++){
+        printf("  Unit %d:\n", i+1);
+        printf("    Name: %s \n", army->units[i].unit_name);
+        printf("    Models: %d \n", army->units[i].model_count);
+    }
+    printf("\n");
+}
+
+void select_model1(Unit *unit){
+    printf("Select Model: \n");
+    for(uint8_t i = 0; i < unit->model_count; i++){
+        printf("%d - %s \n",i,unit->models[i].model_name);
+    }
+}
+
+void select_model(Unit *unit){
+    int model_index;
+    printf("Enter the index of the model you want to select (0 to %d): ", unit->model_count - 1);
+    scanf("%d", &model_index);
+
+    if(model_index >= 0 && model_index < unit->model_count){
+        Model selected_model = unit->models[model_index];
+        printf("You selected model %d: %s\n", model_index, selected_model.model_name);
+    } else {
+        printf("Invalid model index. Please enter a number between 0 and %d.\n", unit->model_count - 1);
+    }
+}
+
+int8_t dead_models = 0;
+
 
 /*
     Game Loop
@@ -94,8 +140,6 @@ uint8_t get_wounding_threshold(uint8_t strenght, uint8_t tougness){
     return 0;
 }
 
-
-Combat_Damage combat_damage;
 /*
     ------------ Combat ------------ 
     1- Attemt to Hit
@@ -125,23 +169,6 @@ Combat_Damage combat_damage;
         can be dice rolls d3,d6
         can be both d3 + 3,...
 */
-void apply_damage(Unit *unit,Combat_Damage *combat_damage){
-    if(unit->model_count <= 0){
-        printf("Unit %s is already dead \n",unit->unit_name);
-        return;
-    }
-
-    for(uint8_t i = 0; i < combat_damage->wounds_count; i++){
-        //todo implement damage to models
-    }
-
-}
-
-void add_combat_damage(Combat_Damage *combat_damage,uint8_t damage_value){
-    combat_damage->damage[combat_damage->wounds_count] =damage_value;
-    combat_damage->wounds_count++;
-}
-
 uint8_t get_damage_die(uint8_t damage_die){
     if(damage_die == D3){
         return roll_d3();
@@ -163,8 +190,15 @@ void handle_damage(Model *attacker,Model *defender){
     handle_damage_die(attacker,&damage_die_value);
     uint8_t damage_value = attacker->weapon.damage + damage_die_value;
     char *defender_name = defender->model_name;
-    add_combat_damage(&combat_damage,damage_value);
-    (void)printf(ANSI_COLOR_BLUE "%s takes %d wound \n" ANSI_COLOR_RESET,defender_name,damage_value);
+    defender->wound -= damage_value;
+    if(defender->wound <= 0){
+        defender->wound = defender->max_wound;
+        dead_models++;
+        printf(ANSI_COLOR_BLUE "%s takes %d wound and dies \n" ANSI_COLOR_RESET,defender_name,damage_value);
+    }
+    else {
+        printf(ANSI_COLOR_BLUE "%s takes %d wound \n" ANSI_COLOR_RESET,defender_name,damage_value);
+    }
 }
 
 void handle_invulnerable_save(Model *defender, uint8_t *armor_save_value){
@@ -178,14 +212,14 @@ void handle_save(Model *attacker,Model *defender){
     int8_t save_roll = roll_d6();
     uint8_t armor_save_value = defender->armor_save;
     uint8_t attacker_armor_piercing_value = attacker->weapon.armor_piercing;
-    save_roll += attacker_armor_piercing_value;
-    save_roll = save_roll < DIE_MINIMUM ? DIE_MINIMUM : save_roll;
+    //todo check armor_piercing_value if its beeng aplied correctly.
+    armor_save_value -= attacker_armor_piercing_value;
     char *defender_name = defender->model_name;
     handle_invulnerable_save(defender,&armor_save_value);
     if(save_roll >= armor_save_value){
-        (void)printf(ANSI_COLOR_BLUE "%s saves with %d (%d/%d)!\n" ANSI_COLOR_RESET,defender_name,save_roll,save_roll,armor_save_value);
+        printf(ANSI_COLOR_BLUE "%s saves with %d (%d/%d)!\n" ANSI_COLOR_RESET,defender_name,save_roll,save_roll,armor_save_value);
     } else {
-        (void)printf(ANSI_COLOR_BLUE "%s failes to save with %d (%d/%d)!\n" ANSI_COLOR_RESET,defender_name,save_roll,save_roll,armor_save_value);
+        printf(ANSI_COLOR_BLUE "%s failes to save with %d (%d/%d)!\n" ANSI_COLOR_RESET,defender_name,save_roll,save_roll,armor_save_value);
         handle_damage(attacker,defender);
     }
 }
@@ -199,10 +233,10 @@ void handle_wound(Model *attacker,Model *defender){
     char *defender_name = defender->model_name;
     char *weapon_name = attacker->weapon.weapon_name;
     if(wound_roll >= wound_val){
-        (void)printf(ANSI_COLOR_RED "%s wounds Enemy %s  with %s (%d/%d) \n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,wound_roll,wound_val);
+        printf(ANSI_COLOR_RED "%s wounds Enemy %s  with %s (%d/%d) \n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,wound_roll,wound_val);
         handle_save(attacker,defender);
     }else {
-        (void)printf(ANSI_COLOR_RED "%s failes to wound  Enemy %s  with %s (%d/%d) \n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,wound_roll,wound_val);
+        printf(ANSI_COLOR_RED "%s failes to wound  Enemy %s  with %s (%d/%d) \n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,wound_roll,wound_val);
     }
 }
 
@@ -213,43 +247,56 @@ void handle_attack(Model *attacker,Model *defender){
     char *defender_name = defender->model_name;
     char *weapon_name =attacker->weapon.weapon_name;
     if( attack_roll >= attacker_balistic_skill){
-        (void)printf(ANSI_COLOR_RED "%s hits  Enemy %s  with %s (%d/%d)\n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,attack_roll,attacker_balistic_skill);
+        printf(ANSI_COLOR_RED "%s hits  Enemy %s  with %s (%d/%d)\n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,attack_roll,attacker_balistic_skill);
         handle_wound(attacker,defender);
     }else {
-        (void)printf(ANSI_COLOR_RED "%s misses  Enemy %s with %s (%d/%d)\n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,attack_roll,attacker_balistic_skill);
+        printf(ANSI_COLOR_RED "%s misses  Enemy %s with %s (%d/%d)\n" ANSI_COLOR_RESET,attacker_name,defender_name,weapon_name,attack_roll,attacker_balistic_skill);
     }
 }
 
 void model_combat(Model *attacker,Model * defender,enum Turn current_turn){
-    (void)printf("------- Attack Sequence -------- \n");
+    printf("------- Attack Sequence -------- \n");
     if(current_turn == RED){
          handle_attack(attacker,defender);
     } else {
          handle_attack(defender,attacker);
     }
-    (void)printf("------- Attack Sequence Ends -------- \n \n");
+    printf("------- Attack Sequence Ends -------- \n \n");
 }
 
-void unit_combat(Unit *attacker,Unit *defender,enum Turn current_turn){
-    if(current_turn == RED){
-        for(uint8_t i = 0; i < attacker->model_count; i++){
-            model_combat(&attacker->models[i],&defender->models[0],current_turn);
-        }
-    } else {
-        for(uint8_t i = 0; i < attacker->model_count; i++){
-            model_combat(&defender->models[0],&attacker->models[i],current_turn);
-        }
+
+void unit_combat(Unit *attacker, Unit *defender, enum Turn current_turn){
+    if(defender->model_count <= 0) {
+        printf("No models in the defending unit to attack.\n");
+        return;
+    }
+
+    for(uint8_t i = 0; i < attacker->model_count; i++){
+        model_combat(&attacker->models[i], &defender->models[0], current_turn);
     }
 }
 
+
+void army_combat(Army *attacker, Army *defender, enum Turn current_turn){
+    if(defender->unit_count <= 0) {
+        printf("No units in the defending army to attack.\n");
+        return;
+    }
+
+    for(uint8_t i = 0; i < attacker->unit_count; i++){
+        unit_combat(&attacker->units[i], &defender->units[0], current_turn);
+    }
+
+}
+
 // void start_combat(Army *army1, Army *army2,enum Turn current_turn){
-//     (void)printf("------- Combat Sequence -------- \n");
+//     printf("------- Combat Sequence -------- \n");
 //     if(current_turn == RED){
 //         unit_combat(army1,army2);
 //     } else {
 //         unit_combat(army2,army1);
 //     }
-//     (void)printf("------- Combat Sequence Ends -------- \n \n");
+//     printf("------- Combat Sequence Ends -------- \n \n");
 // }
 
 
@@ -261,10 +308,10 @@ void remove_dead_units(Army *army, uint8_t size ,uint8_t index, enum Turn curren
 
     if (current_turn == RED){
         //BLUE
-        (void)printf(ANSI_COLOR_BLUE "%s has died !\n" ANSI_COLOR_RESET,army->models[index].model_name);
+        printf(ANSI_COLOR_BLUE "%s has died !\n" ANSI_COLOR_RESET,army->models[index].model_name);
     } else if (current_turn == BLUE){
         //RED
-        (void)printf(ANSI_COLOR_RED "%s has died !\n" ANSI_COLOR_RESET,army->models[index].model_name);
+        printf(ANSI_COLOR_RED "%s has died !\n" ANSI_COLOR_RESET,army->models[index].model_name);
     }
     
 
@@ -299,60 +346,27 @@ int main(void){
         .damage_die = 3
     };
 
-    Model breachers_1 = {
-        .model_name="Navis Armsmen 1",
-        .movement=6,
-        .tougness=3,
-        .armor_save = 4,
-        .wound=1,
-        .leadership=1,
-        .weapon = pistol,
-        .invulnerable_save = 0
+    Weapon shotgun = {
+        .weapon_name = "Shotgun",
+        .ballistic_skill = 4,
+        .strenght = 4,
+        .armor_piercing = 0,
+        .damage = 1,
+        .damage_die = 0
     };
+    
 
-    Model breachers_2 = {
-        .model_name="Navis Armsmen 1",
-        .movement=6,
-        .tougness=3,
-        .armor_save = 4,
-        .wound=1,
-        .leadership=1,
-        .weapon = pistol,
-        .invulnerable_save = 0
-    };
-
-    Model breachers_3 = {
+    Model breachers = {
         .model_name="Navis Armsmen",
         .movement=6,
         .tougness=3,
         .armor_save = 4,
         .wound=1,
+        .max_wound=1,
         .leadership=1,
         .weapon = pistol,
         .invulnerable_save = 0
     };
-
-    Model breachers_4 = {
-        .model_name="Navis Armsmen",
-        .movement=6,
-        .tougness=3,
-        .armor_save = 4,
-        .wound=1,
-        .leadership=1,
-        .weapon = pistol,
-        .invulnerable_save = 0
-    };
-
-    // Model breachers_5 = {
-    //     .model_name="Navis Armsmen",
-    //     .movement=6,
-    //     .tougness=3,
-    //     .armor_save = 4,
-    //     .wound=1,
-    //     .leadership=1,
-    //     .weapon = pistol,
-    //     .invulnerable_save = 0
-    // };
 
     Model vindicare_assassin = {
         .model_name = "Vindicare Assassin",
@@ -360,22 +374,45 @@ int main(void){
         .tougness = 4,
         .armor_save = 6,
         .wound = 4,
+        .max_wound = 4,
         .leadership = 6,
         .invulnerable_save = 4,
         .weapon = rifle
     };
 
-    // Unit unit1 = {
-    //     .unit_name = "Imperial Navy Breachers 1",
-    //     .models = {&breachers_1,&breachers_2},
-    //     .model_count = 2
-    // };
 
-    // Unit unit2 = {
-    //     .unit_name = "Imperial Navy Breachers 2",
-    //     .models = {&breachers_3,&breachers_4},
-    //     .model_count = 2
-    // };
+    Model exacation_vigilants = {
+        .model_name = "Exacation Vigilants",
+        .movement = 6,
+        .tougness = 3,
+        .armor_save = 4,
+        .wound = 1,
+        .max_wound = 1,
+        .leadership = 7,
+        .invulnerable_save = 0,
+        .weapon = shotgun
+    };
+
+
+
+    Unit unit1 = {
+        .unit_name = "Imperial Navy Breachers",
+        .models = {breachers,breachers,breachers,breachers},
+        .model_count = 4
+    };
+
+    Unit unit2 = {
+        .unit_name = "EXACTION SQUAD",
+        .models = {exacation_vigilants,exacation_vigilants,exacation_vigilants,exacation_vigilants},
+        .model_count = 4
+    };
+
+    Unit unit3 = {
+        .unit_name = "Vindicare Assassin",
+        .models = {vindicare_assassin},
+        .model_count = 1
+    };
+    
 
     // Unit unit3 = {
     //     .unit_name = "Imperial Navy Breachers 3",
@@ -389,22 +426,34 @@ int main(void){
     //     .model_count = 1
     // };
 
+    // Army army1 = {
+    //     .models = {breachers_1,breachers_2,breachers_3},
+    //     .model_count = 3,
+    //     .army_name = "Agents of Imperium"
+    // };
+    
+    // Army army2 = {
+    //     .models = {breachers_4,vindicare_assassin},
+    //     .model_count = 2,
+    //     .army_name = "Agents of Imperium"
+    // };
+
     Army army1 = {
-        .models = {breachers_1,breachers_2,breachers_3},
-        .model_count = 3,
+        .units = {unit1,unit3},
+        .unit_count = 2,
         .army_name = "Agents of Imperium"
     };
     
     Army army2 = {
-        .models = {breachers_4,vindicare_assassin},
-        .model_count = 2,
+        .units = {unit2},
+        .unit_count = 1,
         .army_name = "Agents of Imperium"
     };
 
     enum Turn this_turn = RED;
     
-    (void)printf("First Round ! \n");
-    while (1){
+    printf("First Round ! \n");
+    while (0){
         if(army1.model_count <= 0 || army2.model_count <= 0){
             break;
         }
@@ -413,11 +462,13 @@ int main(void){
             for(uint8_t j = 0; j < army2.model_count; j++){
                 //start combat
                 if(this_turn == RED){
-                    (void)printf(ANSI_COLOR_RED "------- %s's  turn -------- \n \n"ANSI_COLOR_RESET,army1.army_name);
+                    printf(ANSI_COLOR_RED "------- %s's  turn -------- \n \n"ANSI_COLOR_RESET,army1.army_name);
                 }else {
-                    (void)printf(ANSI_COLOR_BLUE "------- %s's  turn -------- \n \n"ANSI_COLOR_RESET,army2.army_name);
+                    printf(ANSI_COLOR_BLUE "------- %s's  turn -------- \n \n"ANSI_COLOR_RESET,army2.army_name);
                 }
-                model_combat(&army1.models[i],&army2.models[j],this_turn);
+                //model_combat(&army1.models[i],&army2.models[j],this_turn);
+
+                army_combat(&army1,&army2,this_turn);
 
                 //remove dead models
                 remove_dead_units(&army1,army1.model_count,i,this_turn);        
@@ -432,5 +483,14 @@ int main(void){
             }
         }
     }
-    (void)printf("End of Combat \n");
+
+    // print_unit(&unit1);
+    // select_model(&unit2);
+    // print_army(&army2);    
+    // print_unit(&unit2);
+    
+    army_combat(&army2,&army1,this_turn);
+    print_army(&army1);
+    print_unit(&unit1);
+    printf("End of Combat \n");
 }
