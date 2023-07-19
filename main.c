@@ -86,14 +86,23 @@ void print_army(Army *army){
     printf("\n");
 }
 
-void select_model1(Unit *unit){
-    printf("Select Model: \n");
-    for(uint8_t i = 0; i < unit->model_count; i++){
-        printf("%d - %s \n",i,unit->models[i].model_name);
-    }
+uint8_t select_unit(Army *army){
+    int unit_index;
+    do {
+        printf("Enter the index of the unit you want to select (0 to %d): ", army->unit_count - 1);
+        scanf("%d", &unit_index);
+
+        if(unit_index >= 0 && unit_index < army->unit_count){
+            Unit selected_unit = army->units[unit_index];
+            printf("You selected unit %d: %s\n", unit_index, selected_unit.unit_name);
+            return unit_index;
+        } else {
+            printf("Invalid unit index. Please enter a number between 0 and %d.\n", army->unit_count - 1);
+        }
+    } while(unit_index < 0 || unit_index >= army->unit_count);
 }
 
-void select_model(Unit *unit){
+void select_model1(Unit *unit){
     int model_index;
     printf("Enter the index of the model you want to select (0 to %d): ", unit->model_count - 1);
     scanf("%d", &model_index);
@@ -105,6 +114,40 @@ void select_model(Unit *unit){
         printf("Invalid model index. Please enter a number between 0 and %d.\n", unit->model_count - 1);
     }
 }
+
+uint8_t select_model(Unit *unit){
+    int model_index;
+    printf("Enter the index of the model you want to select (0 to %d): ", unit->model_count - 1);
+    scanf("%d", &model_index);
+
+    if(model_index >= 0 && model_index < unit->model_count){
+        Model selected_model = unit->models[model_index];
+        printf("You selected model %d: %s\n", model_index, selected_model.model_name);
+        return model_index;
+    } else {
+        printf("Invalid model index. Please enter a number between 0 and %d.\n", unit->model_count - 1);
+        return -1; // return -1 to indicate an invalid index
+    }
+}
+
+
+void remove_model(Unit *unit, int model_index){
+    if(model_index >= 0 && model_index < unit->model_count){
+        Model removed_model = unit->models[model_index];
+        // Shift all models after the selected one one place to the left
+        for(int i = model_index; i < unit->model_count - 1; i++){
+            unit->models[i] = unit->models[i + 1];
+        }
+
+        // Decrease the model count
+        unit->model_count--;
+
+        printf("Model %d: %s has been removed.\n", model_index, removed_model.model_name);
+    } else {
+        printf("Invalid model index. Please enter a number between 0 and %d.\n", unit->model_count - 1);
+    }
+}
+
 
 int8_t dead_models = 0;
 
@@ -283,10 +326,21 @@ void army_combat(Army *attacker, Army *defender, enum Turn current_turn){
         return;
     }
 
-    for(uint8_t i = 0; i < attacker->unit_count; i++){
-        unit_combat(&attacker->units[i], &defender->units[0], current_turn);
-    }
+    print_army(defender);
 
+    uint8_t defending_unit_index = select_unit(defender);
+    for(uint8_t i = 0; i < attacker->unit_count; i++){
+        unit_combat(&attacker->units[i], &defender->units[defending_unit_index], current_turn);
+        if(dead_models){
+            while (dead_models){
+                printf("Remove %d models from %s unit \n",dead_models,defender->units[defending_unit_index].unit_name);
+                print_unit(&defender->units[defending_unit_index]);
+                uint8_t model_index = select_model(&defender->units[defending_unit_index]);
+                remove_model(&defender->units[defending_unit_index],model_index);
+                dead_models--;
+            }
+        }
+    }
 }
 
 // void start_combat(Army *army1, Army *army2,enum Turn current_turn){
@@ -449,7 +503,7 @@ int main(void){
         .unit_count = 1,
         .army_name = "Agents of Imperium"
     };
-
+  
     enum Turn this_turn = RED;
     
     printf("First Round ! \n");
@@ -489,8 +543,11 @@ int main(void){
     // print_army(&army2);    
     // print_unit(&unit2);
     
+    // army_combat(&army2,&army1,this_turn);
+    // print_army(&army1);
+    // select_unit(&army1);
+    // print_unit(&unit1);
+    army_combat(&army1,&army2,this_turn);
     army_combat(&army2,&army1,this_turn);
-    print_army(&army1);
-    print_unit(&unit1);
     printf("End of Combat \n");
 }
